@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Data (raw datasets are large / redistributable-restricted, don't commit them)
+data/raw/
+data/processed/
+*.csv
+*.parquet
+!data/*.gitkeep
+
+# Models / results
+results/*.png
+results/*.json
+!results/.gitkeep
+*.pkl
+*.joblib
+models/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Env
+.env
