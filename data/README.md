@@ -21,10 +21,12 @@ About 82,500 rows once combined and cleaned up. In the `label` column, 1 means p
 
 Running `python src/data_loading.py` downloads all of this into `data/raw/` the first time (takes a minute, don't panic if it seems slow), then saves a cleaned up combined version to `data/processed/combined.csv`, which is what the model scripts actually read from.
 
-## Link/URL data (not used yet)
+## Link/URL data
 
-For the next stage, I'm planning to use one of these:
-- [Phishing URLs Dataset with Extracted Features (Kaggle)](https://www.kaggle.com/datasets/victusadi/phishing-urls-dataset-with-extracted-features)
-- [PhiUSIIL Phishing URL Dataset (UCI)](https://archive.ics.uci.edu/dataset/967/phiusil-phishing-url-dataset)
+Going with PhiUSIIL ([UCI Machine Learning Repository](https://archive.ics.uci.edu/dataset/967/phiusiil+phishing+url+dataset)), about 236,000 real URLs, roughly half legitimate and half phishing.
 
-If Kaggle's download doesn't work for you either, just grab the CSV manually from the link and stick it in `data/raw/`.
+`src/url_data_loading.py` downloads and unzips it automatically the first time you run `python src/url_baseline.py` (or `python src/url_data_loading.py` on its own). If the direct download link ever stops working, grab the zip manually from the link above and drop the extracted CSV into `data/raw/phiusiil/`.
+
+PhiUSIIL's own label column is the other way round to mine (1 = legitimate there, vs 1 = phishing in the email dataset), so `url_data_loading.py` flips it to keep both datasets consistent throughout the project.
+
+It also comes with roughly 50 extra features already worked out (whether the page has a favicon, how many images it has, and so on), all based on actually crawling the live webpage. I don't use any of that here, since a real detector might be checking a link that's already offline by the time anyone looks, or might not have live internet access to go check in the first place. `url_data_loading.py` only keeps the raw `URL` column and the label; everything else gets pulled out of just the URL text itself in `src/url_features.py`.
