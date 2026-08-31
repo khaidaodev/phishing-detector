@@ -66,7 +66,18 @@ Three tricks are wired up so far, all the "character level" ones that are easy t
 - `add_extra_spacing`: breaks a word up like "v e r i f y", an old spam filter trick that only works if the filter's matching on the exact word
 - `homoglyph_substitute`: swaps a letter in a URL's domain for a lookalike character, e.g. paypal.com -> payp4l.com, real typosquatting territory
 
-Run `python src/adversarial.py` to see how much each one knocks the combined model's accuracy on those 12 examples. Haven't run it for real numbers yet, will fill that in here once I have.
+Ran it. Results on the 12 handwritten examples:
+
+| Test | Accuracy |
+|---|---|
+| Baseline (no tricks) | 11/12 (92%) |
+| Typos | 11/12 (92%) |
+| Extra spacing | 11/12 (92%) |
+| Homoglyph URL swap (7 examples that have a URL) | 6/7 (86%) |
+
+None of the three tricks actually broke anything new, the one example that's wrong is wrong even at baseline with no tricks applied at all: a legit message with a Google Drive link in it ("Here's the recording from today's meeting..."), which one of the two models is flagging as phishing for some reason I haven't dug into yet. So on the face of it these three tricks didn't dent the model. I wouldn't read too much into that though, 12 examples is a tiny test set, there's a lot of luck in whether any of them happen to be sitting near the model's decision boundary. Reworded urgent language is a completely different kind of attack (rewriting the meaning rather than fiddling with characters), so it might behave nothing like these three when I get to it.
+
+Plot's in `results/adversarial_accuracy.png`.
 
 Still to come, the other half: rewording the urgent/scary language itself (needs actually hand-rewriting each phishing example rather than a generic function, so it's its own piece of work), and once both halves are in, a proper write-up of what actually broke and why, and whether any of it's fixable.
 
