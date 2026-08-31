@@ -21,6 +21,8 @@ About 82,500 rows once combined and cleaned up. In the `label` column, 1 means p
 
 Running `python src/data_loading.py` downloads all of this into `data/raw/` the first time (takes a minute, don't panic if it seems slow), then saves a cleaned up combined version to `data/processed/combined.csv`, which is what the model scripts actually read from.
 
+Worth knowing: some of the source files also have a `urls` column (just a 0/1 flag for "did this email have a link in it"), and I don't keep that column in `data_loading.py` right now. Checked one of them (Nazario) properly: 91% of rows are flagged as having a link, but only about 12% of rows actually still have a usable URL string sitting in the plain text, the rest got stripped out when the original emails were converted from HTML (a link became text like "Update Your Account" with the actual href gone). That's the reason `src/combine_model.py` combines the text and URL models at prediction time instead of training one model on both datasets glued together, there isn't enough intact URL data here to do it properly the other way.
+
 ## Link/URL data
 
 Going with PhiUSIIL ([UCI Machine Learning Repository](https://archive.ics.uci.edu/dataset/967/phiusiil+phishing+url+dataset)), about 236,000 real URLs, roughly half legitimate and half phishing.

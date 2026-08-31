@@ -46,13 +46,23 @@ Honestly, about as suspicious as the text model's score. Seventeen hand picked n
 
 Plots (confusion matrix, ROC curve, and which features the forest actually used most) are in `results/`.
 
+## Stage 3: combining the two models (in progress)
+
+Started on this, `src/combine_model.py` now runs a message through both models and gives back one combined phishing score, but it's a small first step, not the full thing yet.
+
+First thing I actually tried was training one model on top of both datasets combined (proper "stacking"), but checked that properly before writing any code and it doesn't work here. The email dataset has a `urls` column saying whether a message had a link in it, but not the actual URL text, most real URLs got stripped out when the original emails were converted from HTML to plain text (a link became text like "Update Your Account" with the href gone). Only a small slice of rows still have a usable URL sitting in the text, nowhere near enough to train on properly. On top of that, the URL model's trained on the completely separate PhiUSIIL dataset, so there's no shared set of examples with both a real email body and a real URL to combine features from in the first place.
+
+So `combine_model.py` combines the two models at prediction time instead: for a new message (with its link still intact, unlike the training data), run the text model on the body and the URL model on the link, then take whichever of the two scores is higher as the combined result. No joint training data needed for that, and it's arguably more realistic anyway, that's exactly what a live detector would actually see.
+
+What's still open: there's no proper labeled test set of full messages with intact URLs to check how well the *combined* score performs (that's the same data gap as above), so for now this is checked with a handful of hand-written examples rather than a real evaluation number. That test set will probably end up being the same handwritten examples I build for the adversarial testing below, two birds one stone.
+
 ## What's still left to build
 
-- Combining the text model and the link model into one
+- Properly evaluate the combined model (see the limitation just above) and try a smarter combining rule than "take the higher score" once there's something to measure it against
 - Trying to break my own model on purpose, typos, characters that look like letters but aren't, extra spaces, reworded scary language, and seeing how much it messes the model up
 - Maybe a tiny website at the end where you paste a message in and it tells you phishing or not
 
-None of that is built yet, but I left notes for myself in each file (`src/combine_model.py`, `src/adversarial.py`, `demo/app.py`) so I remember the plan when I get to it.
+Notes for the last two are in `src/adversarial.py` and `demo/app.py`.
 
 ## How to run this yourself
 
