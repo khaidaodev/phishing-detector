@@ -54,15 +54,29 @@ First thing I actually tried was training one model on top of both datasets comb
 
 So `combine_model.py` combines the two models at prediction time instead: for a new message (with its link still intact, unlike the training data), run the text model on the body and the URL model on the link, then take whichever of the two scores is higher as the combined result. No joint training data needed for that, and it's arguably more realistic anyway, that's exactly what a live detector would actually see.
 
-What's still open: there's no proper labeled test set of full messages with intact URLs to check how well the *combined* score performs (that's the same data gap as above), so for now this is checked with a handful of hand-written examples rather than a real evaluation number. That test set will probably end up being the same handwritten examples I build for the adversarial testing below, two birds one stone.
+What's still open: there's no big labeled dataset of full messages with intact URLs to check how well the *combined* score performs (that's the same data gap as above). The handwritten test set built for the adversarial testing below (see stage 4) doubles as this evaluation, but it's only 12 examples, so it's a sanity check rather than a real statistically solid number.
+
+## Stage 4: breaking my own model on purpose (half done)
+
+Started the adversarial testing. `src/adversarial.py` has a small set of 12 handwritten messages (6 phishing, 6 legit) with the right answer for each one, some with a URL attached, some without. This is also the "proper evaluation" for the combined model that stage 3 above was missing, since it's exactly what was needed: real messages with intact URLs and known right answers.
+
+Three tricks are wired up so far, all the "character level" ones that are easy to generate a bunch of automatically:
+
+- `inject_typos`: swaps or drops a letter in some words, the sort of thing that happens by accident but also gets used on purpose to dodge keyword filters
+- `add_extra_spacing`: breaks a word up like "v e r i f y", an old spam filter trick that only works if the filter's matching on the exact word
+- `homoglyph_substitute`: swaps a letter in a URL's domain for a lookalike character, e.g. paypal.com -> payp4l.com, real typosquatting territory
+
+Run `python src/adversarial.py` to see how much each one knocks the combined model's accuracy on those 12 examples. Haven't run it for real numbers yet, will fill that in here once I have.
+
+Still to come, the other half: rewording the urgent/scary language itself (needs actually hand-rewriting each phishing example rather than a generic function, so it's its own piece of work), and once both halves are in, a proper write-up of what actually broke and why, and whether any of it's fixable.
 
 ## What's still left to build
 
-- Properly evaluate the combined model (see the limitation just above) and try a smarter combining rule than "take the higher score" once there's something to measure it against
-- Trying to break my own model on purpose, typos, characters that look like letters but aren't, extra spaces, reworded scary language, and seeing how much it messes the model up
+- The rest of the adversarial testing (see stage 4 above): reworded urgent language, and the write-up
+- Trying a smarter combining rule than "take the higher score" for stage 3, once the adversarial test set gives something to measure it against
 - Maybe a tiny website at the end where you paste a message in and it tells you phishing or not
 
-Notes for the last two are in `src/adversarial.py` and `demo/app.py`.
+Notes for the last one are in `demo/app.py`.
 
 ## How to run this yourself
 
@@ -70,9 +84,11 @@ Notes for the last two are in `src/adversarial.py` and `demo/app.py`.
 pip install -r requirements.txt
 python src/text_baseline.py     # text model
 python src/url_baseline.py      # link/URL model
+python src/combine_model.py     # runs a few example messages through both models combined
+python src/adversarial.py       # tests the combined model against the tricks in stage 4
 ```
 
-First time you run either one, it downloads the relevant dataset automatically (email data is around 250MB, URL data around 15MB), then trains the model and prints out the results.
+First time you run the text or URL model, it downloads the relevant dataset automatically (email data is around 250MB, URL data around 15MB), then trains the model and prints out the results. `combine_model.py` and `adversarial.py` need the text and URL models trained first (they load the saved `.joblib` files from `models/`).
 
 ## Where the data's from
 
