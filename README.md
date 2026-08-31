@@ -56,17 +56,18 @@ So `combine_model.py` combines the two models at prediction time instead: for a 
 
 What's still open: there's no big labeled dataset of full messages with intact URLs to check how well the *combined* score performs (that's the same data gap as above). The handwritten test set built for the adversarial testing below (see stage 4) doubles as this evaluation, but it's only 12 examples, so it's a sanity check rather than a real statistically solid number.
 
-## Stage 4: breaking my own model on purpose (half done)
+## Stage 4: breaking my own model on purpose
 
-Started the adversarial testing. `src/adversarial.py` has a small set of 12 handwritten messages (6 phishing, 6 legit) with the right answer for each one, some with a URL attached, some without. This is also the "proper evaluation" for the combined model that stage 3 above was missing, since it's exactly what was needed: real messages with intact URLs and known right answers.
+`src/adversarial.py` has a small set of 12 handwritten messages (6 phishing, 6 legit) with the right answer for each one, some with a URL attached, some without. This also doubles as the "proper evaluation" for the combined model that stage 3 above was missing, since it's exactly what was needed: real messages with intact URLs and known right answers.
 
-Three tricks are wired up so far, all the "character level" ones that are easy to generate a bunch of automatically:
+Four tricks, real ones phishers actually use:
 
 - `inject_typos`: swaps or drops a letter in some words, the sort of thing that happens by accident but also gets used on purpose to dodge keyword filters
 - `add_extra_spacing`: breaks a word up like "v e r i f y", an old spam filter trick that only works if the filter's matching on the exact word
 - `homoglyph_substitute`: swaps a letter in a URL's domain for a lookalike character, e.g. paypal.com -> payp4l.com, real typosquatting territory
+- `apply_reworded_urgency`: a calmer, less panicky hand-rewrite of each phishing example, same scam, none of the "URGENT", "act now", "24 hours" language. This one's hand-written rather than a generic function on purpose, deleting a fixed list of urgent-sounding words would only prove the model depends on those exact words, not whether a more patient-sounding phisher can still get the same scam through.
 
-Ran it. Results on the 12 handwritten examples:
+Results on the 12 handwritten examples:
 
 | Test | Accuracy |
 |---|---|
@@ -74,17 +75,22 @@ Ran it. Results on the 12 handwritten examples:
 | Typos | 11/12 (92%) |
 | Extra spacing | 11/12 (92%) |
 | Homoglyph URL swap (7 examples that have a URL) | 6/7 (86%) |
+| Reworded urgency (6 phishing examples) | 6/6 (100%) |
 
-None of the three tricks actually broke anything new, the one example that's wrong is wrong even at baseline with no tricks applied at all: a legit message with a Google Drive link in it ("Here's the recording from today's meeting..."), which one of the two models is flagging as phishing for some reason I haven't dug into yet. So on the face of it these three tricks didn't dent the model. I wouldn't read too much into that though, 12 examples is a tiny test set, there's a lot of luck in whether any of them happen to be sitting near the model's decision boundary. Reworded urgent language is a completely different kind of attack (rewriting the meaning rather than fiddling with characters), so it might behave nothing like these three when I get to it.
+**What actually happened:** none of the four tricks broke anything new. The only wrong answer anywhere in this table is the same one example, in every row, a legit message with a Google Drive link in it ("Here's the recording from today's meeting...") that's wrong even at baseline with no tricks applied at all. So the actual finding here isn't "the model resisted every attack", it's "none of these four specific tricks moved the needle on this particular model", which is a narrower and more honest claim.
+
+**Why, probably:** the URL model leans hard on structural features (is it HTTPS, is it a raw IP, does the domain have digits in it, that sort of thing), and none of the four tricks touch those in a way that would flip a prediction, homoglyph swapping only changes 1-2 letters, it doesn't turn a normal-looking domain into an IP address or strip the HTTPS. The text model is TF-IDF based, so it scores on word patterns rather than a fixed keyword list, that's probably why reworded_urgency didn't dent it either: a TF-IDF model that's seen enough real phishing emails likely picked up on softer scam patterns too (a link plus a plausible-sounding excuse to click it), not just the shoutiness.
+
+**Is the Google Drive miss fixable:** haven't dug into which of the two models is actually responsible yet, `combine_model.py` would need a small debugging pass (print `text_proba` and `url_proba` separately for that one example) to find out. Worth doing at some point, but it's one example out of twelve, not something to over-tune the model around.
+
+**Honest limitation:** 12 handwritten examples is a sanity check, not a rigorous adversarial evaluation. A real one would need way more examples, ideally covering a wider range of scam types, and probably some tricks that are actually designed to target this specific model's weak points rather than generic ones borrowed from old spam-filter history.
 
 Plot's in `results/adversarial_accuracy.png`.
 
-Still to come, the other half: rewording the urgent/scary language itself (needs actually hand-rewriting each phishing example rather than a generic function, so it's its own piece of work), and once both halves are in, a proper write-up of what actually broke and why, and whether any of it's fixable.
-
 ## What's still left to build
 
-- The rest of the adversarial testing (see stage 4 above): reworded urgent language, and the write-up
-- Trying a smarter combining rule than "take the higher score" for stage 3, once the adversarial test set gives something to measure it against
+- Track down which model is flagging the Google Drive example and see if it's an easy fix
+- Trying a smarter combining rule than "take the higher score" for stage 3, now that the adversarial test set gives something to measure it against
 - Maybe a tiny website at the end where you paste a message in and it tells you phishing or not
 
 Notes for the last one are in `demo/app.py`.

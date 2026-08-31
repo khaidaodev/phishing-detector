@@ -9,7 +9,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from adversarial import add_extra_spacing, homoglyph_substitute, inject_typos  # noqa: E402
+from adversarial import (  # noqa: E402
+    add_extra_spacing,
+    apply_reworded_urgency,
+    homoglyph_substitute,
+    inject_typos,
+)
 
 
 def test_inject_typos_changes_text_with_high_rate():
@@ -46,3 +51,15 @@ def test_homoglyph_substitute_only_touches_the_domain():
 def test_homoglyph_substitute_handles_no_url():
     assert homoglyph_substitute(None) is None
     assert homoglyph_substitute("") == ""
+
+
+def test_apply_reworded_urgency_swaps_in_the_calmer_version():
+    ex = {"message_text": "URGENT act now", "reworded_text": "no rush, whenever works", "label": 1}
+    out = apply_reworded_urgency(ex)
+    assert out["message_text"] == "no rush, whenever works"
+    assert out is not ex  # got a new dict back, didn't mutate the original
+
+
+def test_apply_reworded_urgency_leaves_examples_without_one_alone():
+    ex = {"message_text": "hey, lunch tomorrow?", "label": 0}
+    assert apply_reworded_urgency(ex) is ex

@@ -6,17 +6,17 @@ This takes a small set of messages I've written by hand (so I know the right ans
 one), applies a few tricks real phishers actually use to dodge filters, and checks how much
 worse `combine_model.py`'s predictions get.
 
-Doing three tricks in this pass, all "character level" stuff that's easy to generate a bunch of
-automatically:
+Four tricks:
     - typos (inject_typos): swapping or dropping a letter here and there
     - extra/broken up spacing (add_extra_spacing): "v e r i f y" instead of "verify", an old spam
       filter dodge that relies on matching exact keywords
     - homoglyphs (homoglyph_substitute): swapping a letter in a URL's domain for one that looks
       almost the same, like a zero instead of a capital O, e.g. paypal.com -> payp4l.com
-
-A fourth one is still to come in a follow up pass: reworded urgent/scary language. That one needs
-actually hand-rewriting each phishing example rather than a generic function, so it's its own
-piece of work rather than something to rush in here.
+    - reworded urgency (apply_reworded_urgency): a calmer, less panicky rewrite of each phishing
+      example, same scam, none of the "URGENT", "act now", "24 hours" style language. This one's
+      hand-written rather than a generic function, a script that just deletes urgent-sounding
+      words would only be testing whether the model relies on those exact words, not whether a
+      more patient-sounding phisher can still get the same scam past it.
 
 This also doubles as the "proper evaluation" for the combined model that src/combine_model.py's
 notes said was still missing, since it's a set of full messages with intact URLs and known right
@@ -45,31 +45,37 @@ MODELS_DIR = ROOT / "models"
 BASELINE_EXAMPLES = [
     {
         "message_text": "Your account has been suspended, click here to verify your identity immediately.",
+        "reworded_text": "Your account needs a quick identity check, feel free to follow the link below whenever you get a chance.",
         "url": "http://paypa1-secure-login.com/verify?redirect=http://paypal.com",
         "label": 1,
     },
     {
         "message_text": "URGENT: your bank account will be locked in 24 hours unless you confirm your details now.",
+        "reworded_text": "Just a heads up, could you confirm a few account details sometime this week when it's convenient?",
         "url": "http://192.168.45.12/secure-banking/confirm.php",
         "label": 1,
     },
     {
         "message_text": "Congratulations! You've won a $500 gift card, claim it before it expires today.",
+        "reworded_text": "You've been selected for a $500 gift card, here's the link whenever you'd like to claim it.",
         "url": "http://bit.ly/claim-prize-now",
         "label": 1,
     },
     {
         "message_text": "We noticed unusual sign-in activity on your account. Verify now to avoid permanent suspension.",
+        "reworded_text": "We noticed a new sign-in on your account, might be worth taking a look when you have a moment.",
         "url": "http://amaz0n-account-security.com/signin",
         "label": 1,
     },
     {
         "message_text": "Your package could not be delivered. Update your shipping address to reschedule delivery.",
+        "reworded_text": "Looks like your package missed its delivery slot, you can update your address whenever suits to get it rescheduled.",
         "url": "http://usps-redelivery-update.info/track",
         "label": 1,
     },
     {
         "message_text": "Final notice: your subscription payment failed. Update your payment details within 48 hours or it will be cancelled.",
+        "reworded_text": "Just letting you know your last payment didn't go through, you can update your details any time that's easiest for you.",
         "url": None,
         "label": 1,
     },
@@ -147,6 +153,16 @@ def homoglyph_substitute(url, num_swaps: int = 2, seed: int = 0):
     return url.replace(domain, new_domain, 1)
 
 
+def apply_reworded_urgency(example: dict) -> dict:
+    """Swaps in the hand-written, calmer version of a phishing example's wording, if it has one.
+    Legit examples don't have a "reworded_text" (nothing to tone down), and this returns the
+    exact same object (not just an equal-looking one) when there's nothing to swap, so the
+    caller can tell "not applicable" apart from "applied but happened to look the same"."""
+    if "reworded_text" not in example:
+        return example
+    return {**example, "message_text": example["reworded_text"]}
+
+
 # each one takes an example dict + a seed, and returns a new example dict with one field
 # tweaked. Returns the *same* object (checked with `is` below) when the trick genuinely doesn't
 # apply, e.g. no URL to homoglyph-swap, so that case doesn't get counted as a pass or a fail.
@@ -156,6 +172,7 @@ PERTURBATIONS = {
     "homoglyph_url": lambda ex, seed: (
         {**ex, "url": homoglyph_substitute(ex["url"], seed=seed)} if ex.get("url") else ex
     ),
+    "reworded_urgency": lambda ex, seed: apply_reworded_urgency(ex),
 }
 
 
