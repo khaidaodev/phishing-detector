@@ -113,6 +113,10 @@ Kaggle has a "Phishing Email Dataset" that combines a bunch of older, well known
 
 The URL model uses PhiUSIIL, a dataset of real URLs from the UCI Machine Learning Repository. It actually comes with about 50 features already calculated (stuff about the live webpage, like whether it has a favicon), but I ignore basically all of that and only keep the raw URL text, since a real detector can't always go and crawl the page live. More detail in `data/README.md`.
 
+## Testing and git
+
+`tests/` has pytest tests for the data loading, the URL feature extraction, the combining step, and the adversarial tricks in stage 4. I run them before committing anything that touches the models themselves. Commits are broken up by stage too, baseline text model, then the URL model, then combining the two, then the adversarial testing, rather than one big dump at the end, so the history actually shows the order this got built in.
+
 ## Tools used
 
 Python, pandas, scikit-learn (TF-IDF + logistic regression for the text model, Random Forest for the URL model), tldextract for pulling domains/subdomains out of URLs, matplotlib for the plots. Planning to add Hugging Face's `transformers` library later for a proper transformer model.
