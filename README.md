@@ -42,7 +42,7 @@ Results on the test set (about 235,000 URLs total, kept 20% aside for testing):
 
 ROC-AUC came out to 0.998.
 
-Honestly, about as suspicious as the text model's score. Seventeen hand picked numbers shouldn't be enough to get a URL right basically every time, that's the kind of score you get when the dataset has some obvious shortcut in it rather than the model actually being that good at spotting phishing in general. Same plan as the text model: hold off trusting this until I've done the adversarial testing (`src/adversarial.py`) and actually tried to break it with URLs designed to look tricky.
+Honestly, about as suspicious as the text model's score. Seventeen hand picked numbers shouldn't be enough to get a URL right basically every time, that's the kind of score you get when the dataset has some obvious shortcut in it rather than the model actually being that good at spotting phishing in general. Turned out to be exactly that, see stage 5 below for what the shortcut actually was and what I did about it.
 
 Plots (confusion matrix, ROC curve, and which features the forest actually used most) are in `results/`.
 
@@ -87,9 +87,33 @@ Results on the 12 handwritten examples:
 
 Plot's in `results/adversarial_accuracy.png`.
 
+## Stage 5: found (and partly fixed) a bias in the URL training data
+
+Went back to the one wrong answer from stage 4, the legit Google Drive link that kept getting flagged as phishing across every single trick, to find out why before moving on.
+
+**What I found:** every single one of the ~135,000 "legitimate" URLs in PhiUSIIL is a bare homepage, literally `https://www.something.tld` with nothing after it, not one exception in the whole dataset. "Phishing" ones do have real paths a decent chunk of the time. That's not a real-world pattern about what makes a URL legitimate, it's just an artifact of how this dataset happened to get collected, but the model learned it anyway: "does this URL have a path at all" was basically a free giveaway for "phishing" to it. That's exactly why real links like paypal.com/signin (an actual page, not a homepage) or a Google Doc link were getting flagged. It also explains the suspiciously good 0.998 ROC-AUC back in stage 2, a lot of that score was the model spotting this dataset quirk, not genuinely spotting phishing.
+
+**The fix:** `_augment_legitimate_urls_with_paths` in `src/url_data_loading.py` now tacks a realistic path (`/login`, `/blog/post-1`, `/account/settings`, that sort of thing) onto half of the legitimate URLs before training, so "has a path" stops being a free shortcut. Retrained and checked against a handful of real, definitely-legitimate URLs I picked myself, none of them from PhiUSIIL:
+
+| URL | Phishing probability before | After the fix |
+|---|---|---|
+| paypal.com/signin | 0.997 | 0.069 |
+| bbc.co.uk/news/technology | 1.000 | 0.024 |
+| en.wikipedia.org/wiki/Phishing | 1.000 | 0.007 |
+| drive.google.com/file/d/.../view | 1.000 | 0.978 |
+| docs.google.com/document/d/.../edit | 1.000 | 0.987 |
+| dropbox.com/s/.../report.pdf | 1.000 | 0.983 |
+| github.com/.../blob/main/README.md | 1.000 | 1.000 |
+
+Fixed it for URLs with normal, word-based paths. Didn't fix it for file-sharing style links.
+
+**What's still broken, and why it's a harder problem:** Google Drive, Docs, Dropbox and GitHub links all use random-looking alphanumeric segments to point at a specific file (`abc123`, `1a2b3c4d5e`), and so do a lot of real phishing kits, for tracking IDs or just to look more official. My features genuinely can't tell those two apart, a random string is a random string whether it's pointing at someone's real file or a fake login page. Properly fixing this would need either a feature that specifically recognises known file-sharing platforms as a strong "probably fine" signal, or a better dataset whose legitimate class actually includes real file-sharing links to begin with. Neither of those is a quick fix, so it's staying as a documented limitation rather than something I patch around.
+
+If you're re-running this yourself: retrain with `python src/url_baseline.py` to get a model that matches the fixed data (the dataset itself already rebuilds automatically the first time you do, since the fix lives in `url_data_loading.py`).
+
 ## What's still left to build
 
-- Track down which model is flagging the Google Drive example and see if it's an easy fix
+- A better fix for the file-sharing-link problem above (recognise known platforms, or a dataset with real legitimate file links in it)
 - Trying a smarter combining rule than "take the higher score" for stage 3, now that the adversarial test set gives something to measure it against
 - Maybe a tiny website at the end where you paste a message in and it tells you phishing or not
 

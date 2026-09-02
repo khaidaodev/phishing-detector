@@ -9,12 +9,24 @@ something you can do for a link sitting in someone's inbox (the page might be do
 you might not even have internet access at the point you're checking it). So I only keep the `URL`
 column and the label, and build my own features from just the URL text in `src/url_features.py`.
 
+Found a real problem with this dataset while digging into a wrong prediction from stage 4
+(see the README): every single "legitimate" URL in PhiUSIIL is a bare homepage, literally
+"https://www.something.tld" with nothing after it, zero exceptions across all ~135,000 of them.
+"Phishing" ones do have real paths a lot of the time. That's not a real-world pattern, that's
+just how this dataset happened to get collected, but the model latched onto it: "has any path at
+all" basically meant "phishing" to it, so genuinely legit links like paypal.com/signin or a
+Google Doc link were getting flagged. `_augment_legitimate_urls_with_paths` below fixes the worst
+of that by tacking a realistic path onto half the legitimate URLs before training, so the model
+can't use "any path = phishing" as a free shortcut any more. Full details and what's still not
+fixed by this are in the README's stage 5 section.
+
 How to use it:
     python src/url_data_loading.py           # downloads and builds data/processed/url_dataset.csv
     from src.url_data_loading import load_url_dataset
     df = load_url_dataset()                  # gives you back url + label columns
 """
 
+import random
 import shutil
 import ssl
 import zipfile
@@ -23,6 +35,14 @@ from urllib.request import urlopen
 
 import certifi
 import pandas as pd
+
+# a grab-bag of realistic page paths, the kind of thing an actual website has beyond its homepage
+REALISTIC_PATHS = [
+    "/login", "/about", "/contact", "/products", "/blog/post-1", "/account/settings",
+    "/search?q=example", "/news/technology", "/help/faq", "/en/support",
+    "/docs/getting-started", "/user/profile", "/checkout/cart", "/careers/jobs",
+    "/pricing", "/download/app", "/api/v1/status", "/2024/09/article-title",
+]
 
 DATASET_ZIP_URL = "https://archive.ics.uci.edu/static/public/967/phiusiil+phishing+url+dataset.zip"
 
@@ -69,6 +89,24 @@ def fetch_raw_data(force: bool = False) -> Path:
     return csv_path
 
 
+def _augment_legitimate_urls_with_paths(df: pd.DataFrame, seed: int = 42) -> pd.DataFrame:
+    """Gives half of the legitimate URLs a realistic path, so "does this URL have a path at all"
+    stops being a giveaway for "must be phishing" (see the big docstring comment up top for why
+    this is needed). Only touches label=0 (legit) rows, leaves phishing rows exactly as they are.
+    Seeded, so re-running this on the same data gives the same result every time."""
+    rng = random.Random(seed)
+    df = df.copy()
+
+    def maybe_add_path(url: str) -> str:
+        if rng.random() < 0.5:
+            return url.rstrip("/") + rng.choice(REALISTIC_PATHS)
+        return url
+
+    legit_mask = df["label"] == 0
+    df.loc[legit_mask, "url"] = df.loc[legit_mask, "url"].apply(maybe_add_path)
+    return df
+
+
 def build_url_dataset(force_refetch: bool = False) -> pd.DataFrame:
     """Downloads the raw data if needed, keeps just the URL + label, saves the cleaned version."""
     csv_path = fetch_raw_data(force=force_refetch)
@@ -84,6 +122,10 @@ def build_url_dataset(force_refetch: bool = False) -> pd.DataFrame:
         "url": raw[url_col].astype(str),
         "label": 1 - raw[label_col].astype(int),
     })
+    df = df.drop_duplicates(subset="url")
+    df = _augment_legitimate_urls_with_paths(df)
+    # augmenting can occasionally create a duplicate (two different homepages both getting the
+    # same path tacked on), drop those too
     df = df.drop_duplicates(subset="url")
 
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
