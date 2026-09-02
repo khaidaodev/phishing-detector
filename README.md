@@ -109,11 +109,42 @@ Fixed it for URLs with normal, word-based paths. Didn't fix it for file-sharing 
 
 **What's still broken, and why it's a harder problem:** Google Drive, Docs, Dropbox and GitHub links all use random-looking alphanumeric segments to point at a specific file (`abc123`, `1a2b3c4d5e`), and so do a lot of real phishing kits, for tracking IDs or just to look more official. My features genuinely can't tell those two apart, a random string is a random string whether it's pointing at someone's real file or a fake login page. Properly fixing this would need either a feature that specifically recognises known file-sharing platforms as a strong "probably fine" signal, or a better dataset whose legitimate class actually includes real file-sharing links to begin with. Neither of those is a quick fix, so it's staying as a documented limitation rather than something I patch around.
 
-If you're re-running this yourself: retrain with `python src/url_baseline.py` to get a model that matches the fixed data (the dataset itself already rebuilds automatically the first time you do, since the fix lives in `url_data_loading.py`).
+If you're re-running this yourself: `python src/url_data_loading.py` first to rebuild `data/processed/url_dataset.csv` with whatever augmentation logic is currently in `url_data_loading.py`, then `python src/url_baseline.py` to retrain on it. The dataset doesn't rebuild itself automatically, if the CSV's already there it just gets reused as-is, learned that the hard way in stage 6 below.
+
+## Stage 6: the stage 5 fix didn't actually generalize
+
+Stage 5's own check was 7 URLs I picked by hand and typed into a table. Built something more honest: `src/real_url_eval.py`, 100 real legitimate URLs across 10 categories (Wikipedia, GitHub, gov.uk, Stack Overflow, dev docs, news, e-commerce, university, blog posts, and the file-sharing links stage 5 already knew about), and measured the actual false-positive rate per category instead of eyeballing a handful of examples.
+
+**First result, against the stage 5 model: 84 out of 100 (84%) false positives.** Basically broken outside the handful of examples stage 5 happened to check. Turns out that was partly bad luck in which examples got picked: stage 5's "after" table included `bbc.co.uk/news/technology`, and the fix's augmentation list happened to contain the literal path `/news/technology` as one of its 18 templates. The check wasn't wrong, it just wasn't representative.
+
+**Why:** the 18 template paths stage 5 used to teach the model "paths are normal" were short (13 characters on average) and barely hyphenated (0.17 hyphens on average). Real URLs I tested averaged 29 characters and 1.8 hyphens. So the model didn't learn "a path is normal", it learned "a *short, clean* path is normal", and anything longer or messier (which is most real content, a Wikipedia title, a Stack Overflow question slug, a product page) still read as phishing to it.
+
+**Fix v2:** replaced the fixed list with `_generate_realistic_path` in `src/url_data_loading.py`, a small generator that builds a fresh, randomised path for every augmented row instead of repeating 18 strings, single words, hyphenated multi-word slugs, alphanumeric ids, occasionally a file extension or a query string, so the training data actually spans the range of shapes real paths come in rather than one narrow corner of it.
+
+**Retrained, reran the same 100-URL test: 46 out of 100 (46%) false positives.** Real progress, and not evenly spread:
+
+| Category | Before (18 templates) | After (generated paths) |
+|---|---|---|
+| Wikipedia | 60% | 10% |
+| News | 90% | 10% |
+| E-commerce | 100% | 10% |
+| University | 100% | 0% |
+| File-sharing | 100% | 20% |
+| Docs | 80% | 40% |
+| Blog | 100% | 80% |
+| Gov.uk | 10% | 90% |
+| GitHub | 100% | 100% |
+| Stack Overflow | 100% | 100% |
+
+GitHub and Stack Overflow didn't move at all, both use long, multi-segment URLs that mix a numeric id with a long hyphenated slug in the same path, a specific combination the generator still doesn't cover well. Gov.uk actually got *worse*, its URLs are short but heavily hyphenated single segments (`/apply-renew-passport`), and whatever the model's decision boundary is now, that specific shape moved to the wrong side of it. Chasing that with a third round of template tweaks would just be whack-a-mole.
+
+**The bigger honest point:** the official train/test split metrics for this model (in the results above) still say 99% precision. That number isn't wrong, but it's not that meaningful either, both the train and test split come from the same synthetic augmentation, so a held-out split from it can't tell you whether the augmentation itself is realistic. That's exactly why this stage's 100-URL check, built from real sites rather than PhiUSIIL, mattered: it caught something the official metric couldn't.
+
+**Where this leaves it:** two rounds of synthetic path augmentation took the real-world false-positive rate from 84% down to 46%. Real, measured improvement, but there's a ceiling on how far this approach can go, PhiUSIIL just doesn't contain real legitimate URLs with real paths, and no amount of synthetic augmentation fully substitutes for that. A proper fix would need a second, real dataset of legitimate URLs that actually have paths on them. Leaving it there as an honestly measured limitation rather than patching a third time.
 
 ## What's still left to build
 
-- A better fix for the file-sharing-link problem above (recognise known platforms, or a dataset with real legitimate file links in it)
+- A real dataset of legitimate URLs with genuine paths, not a synthetic one, to get past the 46% false-positive rate stage 6 landed on, GitHub/Stack Overflow-style URLs and gov.uk-style short hyphenated ones are the two places it's still clearly wrong
 - Trying a smarter combining rule than "take the higher score" for stage 3, now that the adversarial test set gives something to measure it against
 - Maybe a tiny website at the end where you paste a message in and it tells you phishing or not
 
