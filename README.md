@@ -155,9 +155,11 @@ Notes for the last one are in `demo/app.py`.
 ```bash
 pip install -r requirements.txt
 python src/text_baseline.py     # text model
+python src/url_data_loading.py  # rebuilds the URL training data (needed before url_baseline.py)
 python src/url_baseline.py      # link/URL model
 python src/combine_model.py     # runs a few example messages through both models combined
 python src/adversarial.py       # tests the combined model against the tricks in stage 4
+python src/real_url_eval.py     # tests the URL model against 100 real legitimate URLs, stage 6
 ```
 
 First time you run the text or URL model, it downloads the relevant dataset automatically (email data is around 250MB, URL data around 15MB), then trains the model and prints out the results. `combine_model.py` and `adversarial.py` need the text and URL models trained first (they load the saved `.joblib` files from `models/`).
@@ -170,7 +172,7 @@ The URL model uses PhiUSIIL, a dataset of real URLs from the UCI Machine Learnin
 
 ## Testing and git
 
-`tests/` has pytest tests for the data loading, the URL feature extraction, the combining step, and the adversarial tricks in stage 4. I run them before committing anything that touches the models themselves. Commits are broken up by stage too, baseline text model, then the URL model, then combining the two, then the adversarial testing, rather than one big dump at the end, so the history actually shows the order this got built in.
+`tests/` has pytest tests for the data loading (email and URL), the URL feature extraction, the URL path augmentation from stages 5 and 6, the combining step, the adversarial tricks in stage 4, and the real-URL evaluation from stage 6. I run them before committing anything that touches the models themselves. Commits are broken up by stage too, baseline text model, then the URL model, then combining the two, then adversarial testing, then the two rounds of fixing the URL training data bias, rather than one big dump at the end, so the history actually shows the order this got built in.
 
 ## Tools used
 
