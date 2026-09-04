@@ -32,22 +32,43 @@ from url_features import urls_to_feature_frame
 ROOT = Path(__file__).resolve().parent.parent
 MODELS_DIR = ROOT / "models"
 
+# used by combine_scores below. A score sitting right on 0.5 shouldn't count for nothing (that'd
+# divide by zero if both models landed exactly on 0.5), this floor just keeps every score worth
+# at least a small vote.
+CONFIDENCE_FLOOR = 0.05
+
 
 def combine_scores(text_proba: float, url_proba: float | None) -> float:
     """Combines the two models' phishing probabilities into one score for the message.
 
     If there's no URL in the message at all, the URL model never got a vote, so this is just
-    the text model's score. If there is a URL, this takes whichever of the two scores is
-    higher rather than averaging them: an obviously alarming link shouldn't get diluted by
-    boring-sounding text wrapped around it, and the other way round, a boring-looking link in
-    a screaming "your account is suspended!!" email shouldn't make the message look safer.
-    A weighted average is probably worth trying later once there's a proper way to evaluate
-    which combining rule actually works best (see the limitation noted in the README), this
-    is the simple version to start with.
+    the text model's score.
+
+    If there is a URL, this used to just take whichever of the two scores was higher. Stage 6
+    (see README) found the URL model is still confidently wrong on some real, everyday links,
+    GitHub and Stack Overflow URLs especially, sometimes scoring a totally normal link as 90%+
+    phishing. "Take the higher score" means one confidently wrong model is all it takes to flag
+    someone's boring email as phishing, the text model doesn't get a say at all.
+
+    So this now does a confidence-weighted average instead: each model's score is weighted by
+    how far it sits from 0.5, a score of 0.5 is a coin flip and barely worth listening to, a
+    score of 0.97 is the model actually being sure about something. That way a text model that's
+    very sure a message is boring and legit can outvote a URL model that's only mildly over the
+    0.5 line on a link it's misreading, but a URL model that's *very* confident (a real phishing
+    link, or a link the URL model badly misjudges) still carries real weight, an obviously
+    alarming link doesn't just get diluted away by boring text wrapped around it.
+
+    This isn't a full fix, a URL the model is confidently, extremely wrong about (like GitHub
+    links, still ~99% phishing after stage 6) can still tip a boring message over 0.5, weighting
+    by confidence can't fix a model that's confidently wrong, only a model that's mildly wrong.
+    Measured with src/combined_url_eval.py against the real URLs from stage 6, see the README
+    for the actual before/after numbers.
     """
     if url_proba is None:
         return text_proba
-    return max(text_proba, url_proba)
+    text_weight = abs(text_proba - 0.5) + CONFIDENCE_FLOOR
+    url_weight = abs(url_proba - 0.5) + CONFIDENCE_FLOOR
+    return (text_proba * text_weight + url_proba * url_weight) / (text_weight + url_weight)
 
 
 def predict_combined(message_text: str, url: str | None = None, text_model=None, url_model=None) -> dict:

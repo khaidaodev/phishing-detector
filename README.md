@@ -142,10 +142,36 @@ GitHub and Stack Overflow didn't move at all, both use long, multi-segment URLs 
 
 **Where this leaves it:** two rounds of synthetic path augmentation took the real-world false-positive rate from 84% down to 46%. Real, measured improvement, but there's a ceiling on how far this approach can go, PhiUSIIL just doesn't contain real legitimate URLs with real paths, and no amount of synthetic augmentation fully substitutes for that. A proper fix would need a second, real dataset of legitimate URLs that actually have paths on them. Leaving it there as an honestly measured limitation rather than patching a third time.
 
+## Stage 7: a smarter combining rule for stage 3
+
+Stage 6 measured the URL model's own false-positive rate on 100 real legitimate URLs (46%), but that's the URL model scoring a link on its own. What `combine_model.py`'s `predict_combined()` actually gets in real use is a full message plus a link, and the old combining rule (just take whichever score was higher) meant one confidently wrong URL score was enough to flag someone's completely boring email as phishing, the text model never got a say.
+
+**The fix:** `combine_scores()` now does a confidence-weighted average instead of taking the higher score. Each model's score gets weighted by how far it sits from 0.5, a score of 0.51 is basically a coin flip and barely worth listening to, a score of 0.97 is the model actually being sure about something. That way a text model that's very confident a message is boring and legit can outvote a URL model that's only mildly over the line, but a URL model that's genuinely very confident still carries enough weight to flag an obviously alarming link.
+
+**Measured it properly:** built `src/combined_url_eval.py`, pairs the same 100 real URLs from stage 6 with a few different boring, obviously-legitimate messages, and compares the old rule against the new one on the *combined* score this time, not just the URL model on its own.
+
+| Category | Old rule (take the higher score) | New rule (confidence-weighted) |
+|---|---|---|
+| Wikipedia | 40% | 7% |
+| GitHub | 100% | 97% |
+| Gov.uk | 93% | 30% |
+| Stack Overflow | 100% | 100% |
+| Docs | 60% | 33% |
+| News | 40% | 3% |
+| E-commerce | 40% | 3% |
+| University | 33% | 0% |
+| Blog | 87% | 67% |
+| File-sharing | 47% | 13% |
+
+**Overall: 192/300 (64.0%) false positives down to 106/300 (35.3%).** Real, fairly big improvement, and it came entirely from changing how the two scores get combined, neither model itself was touched.
+
+**What it didn't fix, and why:** GitHub (97%) and Stack Overflow (100%) barely moved. Weighting by confidence only helps when the URL model is mildly wrong, like gov.uk's 0.64 average. GitHub and Stack Overflow links score 99%+ phishing, so confidently wrong that even a very confident legit text score can't pull the average back under 0.5. That's expected rather than a bug in the new rule, a combining rule can only ever balance two opinions against each other, it can't fix one of them being loudly, extremely wrong. That's still the real dataset problem stage 6 already flagged, see the first item below.
+
+Plot's in `results/combined_url_eval.png`, full numbers in `results/combined_url_eval.json`.
+
 ## What's still left to build
 
-- A real dataset of legitimate URLs with genuine paths, not a synthetic one, to get past the 46% false-positive rate stage 6 landed on, GitHub/Stack Overflow-style URLs and gov.uk-style short hyphenated ones are the two places it's still clearly wrong
-- Trying a smarter combining rule than "take the higher score" for stage 3, now that the adversarial test set gives something to measure it against
+- A real dataset of legitimate URLs with genuine paths, not a synthetic one. Stage 7 showed this is the actual blocker now, GitHub and Stack Overflow are so confidently misjudged that no combining rule can route around them, it has to be fixed at the URL model itself
 - Maybe a tiny website at the end where you paste a message in and it tells you phishing or not
 
 Notes for the last one are in `demo/app.py`.
@@ -160,6 +186,7 @@ python src/url_baseline.py      # link/URL model
 python src/combine_model.py     # runs a few example messages through both models combined
 python src/adversarial.py       # tests the combined model against the tricks in stage 4
 python src/real_url_eval.py     # tests the URL model against 100 real legitimate URLs, stage 6
+python src/combined_url_eval.py # tests the combined model's combining rule against those same URLs, stage 7
 ```
 
 First time you run the text or URL model, it downloads the relevant dataset automatically (email data is around 250MB, URL data around 15MB), then trains the model and prints out the results. `combine_model.py` and `adversarial.py` need the text and URL models trained first (they load the saved `.joblib` files from `models/`).
@@ -172,7 +199,7 @@ The URL model uses PhiUSIIL, a dataset of real URLs from the UCI Machine Learnin
 
 ## Testing and git
 
-`tests/` has pytest tests for the data loading (email and URL), the URL feature extraction, the URL path augmentation from stages 5 and 6, the combining step, the adversarial tricks in stage 4, and the real-URL evaluation from stage 6. I run them before committing anything that touches the models themselves. Commits are broken up by stage too, baseline text model, then the URL model, then combining the two, then adversarial testing, then the two rounds of fixing the URL training data bias, rather than one big dump at the end, so the history actually shows the order this got built in.
+`tests/` has pytest tests for the data loading (email and URL), the URL feature extraction, the URL path augmentation from stages 5 and 6, the combining step and its stage 7 confidence-weighting, the adversarial tricks in stage 4, and the real-URL evaluations from stages 6 and 7. I run them before committing anything that touches the models themselves. Commits are broken up by stage too, baseline text model, then the URL model, then combining the two, then adversarial testing, then the two rounds of fixing the URL training data bias, rather than one big dump at the end, so the history actually shows the order this got built in.
 
 ## Tools used
 
