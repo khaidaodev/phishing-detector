@@ -27,8 +27,16 @@ normal". `_generate_realistic_path` below is the fix for that, it builds a fresh
 for every row instead of repeating 18 fixed strings. Full details and numbers for both attempts
 are in the README's stage 5 and stage 6 sections.
 
+Stage 7 found that even with the randomised generator, GitHub and Stack Overflow links were still
+scoring 99%+ phishing, so confidently that no combining rule could route around it (see stage 7 in
+the README). `_generate_realistic_path` picks each path segment's shape independently, so it
+rarely happens to land on GitHub's "five word segments deep" or Stack Overflow's specific
+"word/numeric-id/long-hyphenated-slug" pattern. Stage 8 patches that by mixing a couple hundred
+genuinely real legitimate URLs (src/real_legit_urls.py), weighted towards exactly those shapes,
+straight into the training data alongside the synthetic augmentation.
+
 How to use it:
-    python src/url_data_loading.py           # downloads and builds data/processed/url_dataset.csv
+    python src/url_data_loading.py          # downloads and builds data/processed/url_dataset.csv
     from src.url_data_loading import load_url_dataset
     df = load_url_dataset()                  # gives you back url + label columns
 """
@@ -42,6 +50,8 @@ from urllib.request import urlopen
 
 import certifi
 import pandas as pd
+
+from real_legit_urls import ALL_REAL_LEGIT_TRAINING_URLS
 
 # A pool of words to build paths out of, joined up differently every call (see
 # _generate_realistic_path below) rather than a fixed list of templates, so the augmented paths
@@ -153,6 +163,18 @@ def _augment_legitimate_urls_with_paths(df: pd.DataFrame, seed: int = 42) -> pd.
     return df
 
 
+def _add_real_legitimate_examples(df: pd.DataFrame, urls: list[str]) -> pd.DataFrame:
+    """Appends genuinely real legitimate URLs (src/real_legit_urls.py) as extra label=0 rows,
+    on top of the synthetic augmentation above. Stage 8 (see README): the generator picks each
+    path segment's shape independently, so it rarely lands on the specific deep, multi-part
+    shapes real sites like GitHub and Stack Overflow actually use, no matter how many random
+    rows you generate. A few hundred real examples of exactly those shapes teach the model
+    something the random generator structurally can't produce. The caller's usual
+    drop_duplicates pass handles anything that happens to already be in df."""
+    extra = pd.DataFrame({"url": urls, "label": 0})
+    return pd.concat([df, extra], ignore_index=True)
+
+
 def build_url_dataset(force_refetch: bool = False) -> pd.DataFrame:
     """Downloads the raw data if needed, keeps just the URL + label, saves the cleaned version."""
     csv_path = fetch_raw_data(force=force_refetch)
@@ -170,8 +192,10 @@ def build_url_dataset(force_refetch: bool = False) -> pd.DataFrame:
     })
     df = df.drop_duplicates(subset="url")
     df = _augment_legitimate_urls_with_paths(df)
-    # augmenting can occasionally create a duplicate (two different homepages both getting the
-    # same path tacked on), drop those too
+    df = _add_real_legitimate_examples(df, ALL_REAL_LEGIT_TRAINING_URLS)
+    # augmenting/adding real examples can occasionally create a duplicate (two different
+    # homepages both getting the same path tacked on, or a real URL that PhiUSIIL already had),
+    # drop those too
     df = df.drop_duplicates(subset="url")
 
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)

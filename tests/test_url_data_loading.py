@@ -10,7 +10,10 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from url_data_loading import _augment_legitimate_urls_with_paths  # noqa: E402
+from url_data_loading import (  # noqa: E402
+    _add_real_legitimate_examples,
+    _augment_legitimate_urls_with_paths,
+)
 
 
 def _sample_df():
@@ -53,3 +56,16 @@ def test_does_not_mutate_the_original_dataframe():
     original_urls = original["url"].tolist()
     _augment_legitimate_urls_with_paths(original)
     assert original["url"].tolist() == original_urls
+
+
+def test_add_real_legitimate_examples_appends_them_as_label_zero():
+    out = _add_real_legitimate_examples(_sample_df(), ["https://real-site.com/some/real/path"])
+    new_row = out[out["url"] == "https://real-site.com/some/real/path"]
+    assert len(new_row) == 1
+    assert new_row["label"].iloc[0] == 0
+
+
+def test_add_real_legitimate_examples_keeps_the_original_rows_too():
+    out = _add_real_legitimate_examples(_sample_df(), ["https://real-site.com/path"])
+    assert len(out) == len(_sample_df()) + 1
+    assert "http://phishy-one.ru" in out["url"].tolist()
