@@ -169,9 +169,58 @@ Stage 6 measured the URL model's own false-positive rate on 100 real legitimate 
 
 Plot's in `results/combined_url_eval.png`, full numbers in `results/combined_url_eval.json`.
 
+## Stage 8: mixing real GitHub and Stack Overflow URLs into training
+
+Stage 7 hit a wall it couldn't get past: GitHub and Stack Overflow links scored 99%+ phishing so confidently that no amount of clever combining could pull the average back under 0.5. The actual problem lived in the URL model itself, not in how its score gets used.
+
+**Why the synthetic paths from stage 6 couldn't fix it:** `_generate_realistic_path` builds a path by picking each segment's shape independently, a word here, a slug there, an id somewhere else. GitHub and Stack Overflow URLs aren't random combinations like that, they're a specific deep pattern (`/torvalds/linux/blob/master/kernel/fork.c`, `/questions/1520138/how-do-i-check-if-a-string-contains-a-substring-in-javascript`), five-plus segments deep, mixing a numeric id with a long hyphenated slug in a fixed order. A generator picking segments independently basically never lands on that exact shape by chance, no matter how many rows you generate.
+
+**The fix:** `src/real_legit_urls.py`, about 150 genuinely real URLs (not made up, not templated) across GitHub, Stack Overflow, gov.uk, docs sites, blogs, Wikipedia, news, e-commerce, university sites and file-sharing links, weighted heavily towards GitHub and Stack Overflow since those were the two categories still broken. `_add_real_legitimate_examples` in `url_data_loading.py` mixes these straight into the training data as extra label=0 rows, on top of the synthetic augmentation from stages 5 and 6, not instead of it. Kept these completely separate from the 100 URLs in `real_url_eval.py`'s test set on purpose (there's a test for it), training on the exact URLs used to measure the model would make the results look better than they actually are.
+
+Retrained and reran both of stage 6 and stage 7's tests, same 100 URLs, same messages, nothing else changed:
+
+**Stage 6's test (URL model on its own):**
+
+| Category | Stage 6 (synthetic paths only) | Stage 8 (+ real examples) |
+|---|---|---|
+| Wikipedia | 10% | 10% |
+| News | 10% | 10% |
+| E-commerce | 10% | 0% |
+| University | 0% | 0% |
+| File-sharing | 20% | 0% |
+| Docs | 40% | 40% |
+| Blog | 80% | 60% |
+| Gov.uk | 90% | 0% |
+| GitHub | 100% | 50% |
+| Stack Overflow | 100% | 10% |
+
+Overall: 46/100 (46%) down to 18/100 (18%). Gov.uk and Stack Overflow essentially fixed, GitHub cut in half but still the weakest category.
+
+**Stage 7's test (combined model, confidence-weighted rule):**
+
+| Category | Stage 7 (synthetic model) | Stage 8 (real-mixed model) |
+|---|---|---|
+| Wikipedia | 7% | 3% |
+| GitHub | 97% | 20% |
+| Gov.uk | 30% | 0% |
+| Stack Overflow | 100% | 3% |
+| Docs | 33% | 30% |
+| News | 3% | 3% |
+| E-commerce | 3% | 0% |
+| University | 0% | 0% |
+| Blog | 67% | 40% |
+| File-sharing | 13% | 0% |
+
+**Overall: 106/300 (35.3%) down to 30/300 (10.0%).** GitHub went from 97% to 20% and Stack Overflow from 100% to 3%, exactly the two categories stage 7 couldn't touch at all. Worth separating out where the improvement actually came from: rerunning the old "take the higher score" rule on this new model alone gets 136/300 (45.3%), down from 192/300 (64.0%) on the old model, so mixing in real training examples helped by itself. Layering stage 7's confidence-weighted rule on top of that brings it down further to 10.0%. The two fixes stack, one fixes the URL model's blind spot, the other stops the combining step from trusting a wrong score too much, and neither one on its own gets this far.
+
+**What's still not fixed:** blog (40%) and docs (30%) are now the weakest categories, both cover an enormous range of URL shapes in real life (a blog post slug looks nothing like a docs page's versioned path), so 20 real examples per category isn't really enough to cover that variety, unlike GitHub and Stack Overflow which follow one dominant pattern. GitHub itself is down to 20% rather than 0%, better but not solved, some GitHub URLs (a bare repo link, a short one) still don't look like the deep blob/tree paths most of the training examples used. The official train/test metrics also moved slightly (ROC-AUC 0.9980 to 0.9963), a small dip is expected and not a concern, feeding in more real, less repetitive URLs makes the problem genuinely harder for the model rather than letting it lean on any single clean pattern.
+
+Plots in `results/real_url_eval_accuracy.png` and `results/combined_url_eval.png`, full numbers in `results/real_url_eval.json` and `results/combined_url_eval.json`.
+
 ## What's still left to build
 
-- A real dataset of legitimate URLs with genuine paths, not a synthetic one. Stage 7 showed this is the actual blocker now, GitHub and Stack Overflow are so confidently misjudged that no combining rule can route around them, it has to be fixed at the URL model itself
+- Blog and docs URLs are the weakest categories left (40% and 30% false positives), both cover too wide a range of shapes for a small hand-picked set of real examples to fully capture. More real examples in those two categories specifically, or a proper dataset of real legitimate URLs with paths, would be the next thing to try
+- GitHub links are down to 20% false positives but not fully fixed, some shapes (short, bare repo links) still don't look like the deeper blob/tree examples in training
 - Maybe a tiny website at the end where you paste a message in and it tells you phishing or not
 
 Notes for the last one are in `demo/app.py`.
