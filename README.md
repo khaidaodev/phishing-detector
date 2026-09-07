@@ -217,10 +217,58 @@ Overall: 46/100 (46%) down to 18/100 (18%). Gov.uk and Stack Overflow essentiall
 
 Plots in `results/real_url_eval_accuracy.png` and `results/combined_url_eval.png`, full numbers in `results/real_url_eval.json` and `results/combined_url_eval.json`.
 
+## Stage 9: chasing down blog and docs specifically
+
+Stage 8 fixed GitHub and Stack Overflow almost completely but barely touched blog (40% false positives) and docs (30%). Before adding more data blindly, checked exactly which URLs in those two categories were still wrong and why, same approach as diagnosing GitHub and Stack Overflow in stage 8.
+
+**What was actually wrong:** blog and docs cover a much wider variety of shapes than GitHub or Stack Overflow, which basically follow one dominant pattern each. The ones still getting flagged were short, plain URLs, a personal blog post with no subdomain and a short slug (`danluu.com/input-lag/`), a bare tag page (`dev.to/t/python`), a short two-or-three-segment doc page (`pypi.org/project/scikit-learn/`, `nodejs.org/api/fs.html`, `react.dev/reference/react/useState`). The training data's blog and docs examples so far leaned towards longer, more complex-looking URLs, so short, plain ones still looked unusual to the model.
+
+**The fix:** added 32 more real URLs to `src/real_legit_urls.py`, 17 more blog, 15 more docs, specifically shaped like the ones still failing, more danluu/martinfowler-style short posts, more dev.to tag pages, more pypi/react.dev/nodejs-style short doc pages. Checked they don't overlap with the 100-URL test set before touching anything, same safeguard as stage 8.
+
+**Stage 6's test (URL model on its own), stage 8 vs stage 9:**
+
+| Category | Stage 8 | Stage 9 |
+|---|---|---|
+| Wikipedia | 10% | 10% |
+| GitHub | 50% | 40% |
+| Gov.uk | 0% | 0% |
+| Stack Overflow | 10% | 10% |
+| Docs | 40% | 30% |
+| News | 10% | 10% |
+| E-commerce | 0% | 0% |
+| University | 0% | 0% |
+| Blog | 60% | 60% |
+| File-sharing | 0% | 0% |
+
+Overall: 18/100 (18%) down to 16/100 (16%). Docs improved, GitHub improved a bit too as a side effect even though it wasn't targeted this round, blog didn't move at all on its own.
+
+**Stage 7's test (combined model, confidence-weighted rule), stage 8 vs stage 9:**
+
+| Category | Stage 8 | Stage 9 |
+|---|---|---|
+| Wikipedia | 3% | 3% |
+| GitHub | 20% | 13% |
+| Gov.uk | 0% | 0% |
+| Stack Overflow | 3% | 3% |
+| Docs | 30% | 13% |
+| News | 3% | 3% |
+| E-commerce | 0% | 0% |
+| University | 0% | 0% |
+| Blog | 40% | 27% |
+| File-sharing | 0% | 0% |
+
+**Overall: 30/300 (10.0%) down to 19/300 (6.3%).**
+
+**The honest bit:** blog's false-positive rate on the URL model alone didn't move, still 6 out of 10, same as before, just with slightly lower scores across the board (an average of 0.591 down to 0.533). What actually moved blog's *combined* number from 40% down to 27% is the text model, a moderately-high but not extreme URL score, paired with a boring, obviously-legit message, is exactly the case stage 7's confidence-weighted rule was built for. So the real picture here is that the extra blog examples nudged the URL model in the right direction without being enough on their own to flip its individual verdicts, and the combining rule from stage 7 did the rest. Docs, on the other hand, genuinely improved at the URL-model level too (40% to 30%), not just at the combined level, those extra examples landed closer to the actual shapes docs pages take.
+
+**What's still not fixed:** blog is still the weakest category at 27%, and it makes sense why, a blog post can look like almost anything, a news article, a Wikipedia page, a doc page, there's no one dominant shape to teach the model the way GitHub or Stack Overflow had. Chasing it further with more hand-picked examples would run into diminishing returns fast. GitHub's down to 13%, better again as a side effect, but the same "some shapes still don't match training" story from stage 8 likely still applies.
+
+Same plots and JSON files as stage 8, overwritten with these numbers.
+
 ## What's still left to build
 
-- Blog and docs URLs are the weakest categories left (40% and 30% false positives), both cover too wide a range of shapes for a small hand-picked set of real examples to fully capture. More real examples in those two categories specifically, or a proper dataset of real legitimate URLs with paths, would be the next thing to try
-- GitHub links are down to 20% false positives but not fully fixed, some shapes (short, bare repo links) still don't look like the deeper blob/tree examples in training
+- Blog is the weakest category left (27% false positives on the combined model), and structurally the hardest one to fully fix this way since blog posts don't follow one dominant URL shape the way GitHub or Stack Overflow do. A proper dataset of real legitimate URLs with paths, rather than more hand-picked examples, is probably the real next step if this keeps getting chased
+- Docs and GitHub are both down to 13%, better but not zero
 - Maybe a tiny website at the end where you paste a message in and it tells you phishing or not
 
 Notes for the last one are in `demo/app.py`.
