@@ -6,9 +6,13 @@ A model that looks at an email and predicts whether it's phishing (a scam trying
 
 Pretty much everyone's had a dodgy email or text land in their inbox trying to trick them at some point. Most phishing detectors I looked at online only check one thing, either the wording of the message or the link inside it, but not both. Real phishing usually uses both together (urgent scary wording + a dodgy link), so I want to eventually check both. I also don't want to just show a nice accuracy score and call it done, I want to actually try to break my own model and see where it fails.
 
-## Where it's at right now
+## What it actually does, in short
 
-I've got the first working piece done: a model that reads just the text of an email (no links yet) and guesses phishing or not.
+Two small models working together. One reads the wording of a message and guesses phishing or not, the other reads a link on its own and does the same, then the two scores get combined into one answer. I tested it against tricks a real phisher might use (typos, fake urgency, lookalike domains) and it held up fine. The bigger lesson came after that: when I checked it against everyday real links (GitHub, news sites, blog posts, docs pages), it kept wrongly flagging plenty of them as phishing, not because the model was bad, but because its training data barely had any examples of what a normal, harmless link looks like. Most of the work since has been finding and fixing that, round by round, and being upfront in this README about what got better and what's still not perfect. Right now it wrongly flags a real legitimate link as phishing about 6% of the time, down from around 45% a few rounds ago.
+
+## Stage 1: the text model
+
+First working piece: a model that reads just the text of an email (no links yet) and guesses phishing or not.
 
 How it works: first the text gets turned into numbers using something called TF-IDF, which basically scores how unusual or suspicious a word is in a message rather than just counting how often it shows up. Then a logistic regression model (a fairly simple, beginner-level type of ML model) learns from those numbers to make its guess.
 
@@ -46,7 +50,7 @@ Honestly, about as suspicious as the text model's score. Seventeen hand picked n
 
 Plots (confusion matrix, ROC curve, and which features the forest actually used most) are in `results/`.
 
-## Stage 3: combining the two models (in progress)
+## Stage 3: combining the two models
 
 Started on this, `src/combine_model.py` now runs a message through both models and gives back one combined phishing score, but it's a small first step, not the full thing yet.
 
@@ -54,7 +58,7 @@ First thing I actually tried was training one model on top of both datasets comb
 
 So `combine_model.py` combines the two models at prediction time instead: for a new message (with its link still intact, unlike the training data), run the text model on the body and the URL model on the link, then take whichever of the two scores is higher as the combined result. No joint training data needed for that, and it's arguably more realistic anyway, that's exactly what a live detector would actually see.
 
-What's still open: there's no big labeled dataset of full messages with intact URLs to check how well the *combined* score performs (that's the same data gap as above). The handwritten test set built for the adversarial testing below (see stage 4) doubles as this evaluation, but it's only 12 examples, so it's a sanity check rather than a real statistically solid number.
+What's still open: there's no big labeled dataset of full messages with intact URLs to check how well the *combined* score performs (that's the same data gap as above). The handwritten test set built for the adversarial testing below (see stage 4) doubles as this evaluation, but it's only 12 examples, so it's a sanity check rather than a real statistically solid number. The "take whichever score is higher" rule here is also the simplest possible version, stage 7 below replaces it with something smarter.
 
 ## Stage 4: breaking my own model on purpose
 
